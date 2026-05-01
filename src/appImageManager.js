@@ -330,16 +330,41 @@ export class AppImageManager {
 
     async rescan(directory) {
         const directoryFile = Gio.File.new_for_path(directory);
-        const enumerator = directoryFile.enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
-        let fileInfo;
+        if (!directoryFile.query_exists(null)) {
+            try {
+                directoryFile.make_directory_with_parents(null);
+                log(`Created monitored directory: ${directory}`);
+            } catch (e) {
+                logError(`Failed to create monitored directory ${directory}: ${e.message}`);
+                return;
+            }
+        }
+
+        let enumerator;
+        try {
+            enumerator = directoryFile.enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
+        } catch (e) {
+            logError(`Failed to enumerate directory ${directory}: ${e.message}`);
+            return;
+        }
+
         const filesInDirectory = new Set();
 
-        while ((fileInfo = enumerator.next_file(null)) !== null) {
-            const fileName = fileInfo.get_name();
-            const filePath = GLib.build_pathv('/', [directory, fileName]);
-            filesInDirectory.add(filePath);
-            if (this.isAppImage(filePath)) {
-                await this.addAppImage(filePath);
+        try {
+            let fileInfo;
+            while ((fileInfo = enumerator.next_file(null)) !== null) {
+                const fileName = fileInfo.get_name();
+                const filePath = GLib.build_pathv('/', [directory, fileName]);
+                filesInDirectory.add(filePath);
+                if (this.isAppImage(filePath)) {
+                    await this.addAppImage(filePath);
+                }
+            }
+        } finally {
+            try {
+                enumerator.close(null);
+            } catch {
+                // ignore
             }
         }
 

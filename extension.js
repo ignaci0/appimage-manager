@@ -23,37 +23,47 @@ export default class AppImageManagerExtension extends Extension {
 
         let monitoredDirectory = this._settingsManager.getMonitoredDirectory();
 
-        await this._appImageManager.rescan(monitoredDirectory);
+        try {
+            await this._appImageManager.rescan(monitoredDirectory);
+        } catch (e) {
+            logError(`Rescan failed: ${e?.message ?? e}`);
+        }
 
-        this._fileMonitor.startMonitoring(
+        const started = this._fileMonitor.startMonitoring(
             monitoredDirectory,
             (filePath) => {
-                this._appImageManager.addAppImage(filePath);
+                this._appImageManager.addAppImage(filePath).catch(err => logError(err));
             },
             (filePath) => {
-                this._appImageManager.removeAppImage(filePath);
+                this._appImageManager.removeAppImage(filePath).catch(err => logError(err));
             }
         );
+        if (!started)
+            logError(`Failed to monitor directory: ${monitoredDirectory}`);
     }
 
     disable() {
         log(`Disabling ${this.metadata.name} extension`);
-        this._fileMonitor.stopMonitoring();
+        this._fileMonitor?.stopMonitoring();
 
         let monitoredDirectory = this._settingsManager.getMonitoredDirectory();
         let dir = Gio.File.new_for_path(monitoredDirectory);
         if (dir.query_exists(null)) {
-            let enumerator = dir.enumerate_children('standard::name,standard::type', Gio.FileQueryInfoFlags.NONE, null);
-            let fileInfo;
-            while ((fileInfo = enumerator.next_file(null)) !== null) {
-                let child = dir.get_child(fileInfo.get_name());
-                if (fileInfo.get_file_type() === Gio.FileType.REGULAR && this._appImageManager.isAppImage(child.get_path())) {
-                    let fileName = GLib.path_get_basename(child.get_path());
-                    let appImageName = fileName.replace(/\.AppImage$/, '');
-                    this._launcherService.deleteLauncher(appImageName);
+            try {
+                let enumerator = dir.enumerate_children('standard::name,standard::type', Gio.FileQueryInfoFlags.NONE, null);
+                let fileInfo;
+                while ((fileInfo = enumerator.next_file(null)) !== null) {
+                    let child = dir.get_child(fileInfo.get_name());
+                    if (fileInfo.get_file_type() === Gio.FileType.REGULAR && this._appImageManager.isAppImage(child.get_path())) {
+                        let fileName = GLib.path_get_basename(child.get_path());
+                        let appImageName = fileName.replace(/\.AppImage$/, '');
+                        this._launcherService.deleteLauncher(appImageName);
+                    }
                 }
+                enumerator.close(null);
+            } catch (e) {
+                logError(`Failed to cleanup launchers: ${e?.message ?? e}`);
             }
-            enumerator.close(null);
         }
 
         this._launcherService = null;

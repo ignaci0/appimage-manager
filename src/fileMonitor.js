@@ -28,7 +28,12 @@ export class FileMonitor {
         this._onFileAdded = onFileAdded;
         this._onFileRemoved = onFileRemoved;
 
-        this._monitor = this._directory.monitor_directory(Gio.FileMonitorFlags.NONE, null);
+        try {
+            this._monitor = this._directory.monitor_directory(Gio.FileMonitorFlags.NONE, null);
+        } catch (e) {
+            logError(`Failed to monitor directory ${directoryPath}: ${e.message}`);
+            return false;
+        }
         this._monitor.connect('changed', (monitor, file, otherFile, eventType) => {
             log(`File monitor event: ${eventType}`);
             switch (eventType) {

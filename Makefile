@@ -8,9 +8,8 @@ install: build
 uninstall:
 	gnome-extensions uninstall $(UUID)
 
-build: 
-	echo Nothing to do
-	#glib-compile-schemas src/schemas/
+build:
+	glib-compile-schemas src/schemas/
 
 zip: build
 	rm -f $(UUID).zip
