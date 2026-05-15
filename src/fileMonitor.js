@@ -33,10 +33,6 @@ export class FileMonitor {
             log(`File monitor event: ${eventType}`);
             switch (eventType) {
                 case Gio.FileMonitorEvent.CHANGES_DONE_HINT:
-                    // This event is often fired after a file is added/removed/changed.
-                    // We need to re-scan the directory or rely on other events.
-                    // For simplicity, we'll rely on the ADDED/DELETED events for now.
-                    break;
                 case Gio.FileMonitorEvent.CREATED:
                     {
                         const filePath = file.get_path();

@@ -2,6 +2,10 @@ const mockFile = (path) => ({
   query_exists: jest.fn(() => false),
   make_directory_with_parents: jest.fn(),
   replace_contents: jest.fn(),
+  replace_contents_async: jest.fn(function (contents, etag, make_backup, flags, cancellable, callback) {
+    if (callback) callback(this, {});
+  }),
+  replace_contents_finish: jest.fn(() => [true, null]),
   delete: jest.fn(),
   monitor_directory: jest.fn(() => ({ connect: jest.fn(), cancel: jest.fn() })),
   load_contents: jest.fn(() => [true, '# Created by AppImage Manager']),

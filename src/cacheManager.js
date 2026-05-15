@@ -15,6 +15,7 @@ export var CacheManager = GObject.registerClass({
             GLib.get_user_cache_dir() + '/appimage-manager/cache.json'
         );
         this._cache = {};
+        this._savePromise = Promise.resolve();
         this._cacheLoaded = this._loadCache();
     }
 
@@ -47,30 +48,35 @@ export var CacheManager = GObject.registerClass({
     }
 
     _saveCache() {
-        return new Promise(resolve => {
-            try {
-                let contents = JSON.stringify(this._cache, null, 2);
-                this._cacheFile.replace_contents_async(
-                    contents,
-                    null,
-                    false,
-                    Gio.FileCreateFlags.REPLACE_DESTINATION,
-                    null,
-                    (file, res) => {
-                        try {
-                            file.replace_contents_finish(res);
-                        } catch (e) {
-                            logError('Failed to save cache: ' + e);
-                        } finally {
-                            resolve();
+        this._savePromise = this._savePromise.then(() => {
+            return new Promise(resolve => {
+                try {
+                    let contents = JSON.stringify(this._cache, null, 2);
+                    let encoder = new TextEncoder();
+                    let bytes = new GLib.Bytes(encoder.encode(contents));
+                    this._cacheFile.replace_contents_bytes_async(
+                        bytes,
+                        null,
+                        false,
+                        Gio.FileCreateFlags.REPLACE_DESTINATION,
+                        null,
+                        (file, res) => {
+                            try {
+                                file.replace_contents_finish(res);
+                            } catch (e) {
+                                logError('Failed to save cache: ' + e);
+                            } finally {
+                                resolve();
+                            }
                         }
-                    }
-                );
-            } catch (e) {
-                logError('Failed to save cache: ' + e);
-                resolve();
-            }
+                    );
+                } catch (e) {
+                    logError('Failed to save cache: ' + e);
+                    resolve();
+                }
+            });
         });
+        return this._savePromise;
     }
 
     async add(appImage) {
