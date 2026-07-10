@@ -48,7 +48,7 @@ export class AppImageManager {
 
     isAppImage(filePath) {
         // As per clarification, identify by .AppImage extension
-        return filePath.endsWith('.AppImage');
+        return filePath.toLowerCase().endsWith('.appimage');
     }
 
     ensureExecutable(filePath) {
@@ -63,7 +63,7 @@ export class AppImageManager {
                 log(`Made AppImage executable: ${filePath}`);
             }
         } catch (e) {
-            logError(`Failed to make AppImage executable: ${e.message}`);
+            logError(`Failed to make AppImage executable (filesystem may not support UNIX permissions): ${e.message}`);
         }
     }
 
@@ -102,10 +102,9 @@ export class AppImageManager {
 
         try {
             log(`Extracting ${filePath} to ${tempDir.get_path()}`);
-            let command = `${filePath} --appimage-extract`;
             let [success, pid] = GLib.spawn_async(
                 tempDir.get_path(),
-                ['/bin/sh', '-c', command],
+                [filePath, '--appimage-extract'],
                 null,
                 GLib.SpawnFlags.DO_NOT_REAP_CHILD,
                 null
@@ -298,33 +297,17 @@ export class AppImageManager {
     }
 
     _deleteDirectoryRecursive(directory) {
-        let enumerator;
+        log(`Deleting directory asynchronously: ${directory.get_path()}`);
         try {
-            enumerator = directory.enumerate_children('standard::name,standard::type', Gio.FileQueryInfoFlags.NONE, null);
+            GLib.spawn_async(
+                null,
+                ['rm', '-rf', directory.get_path()],
+                null,
+                GLib.SpawnFlags.SEARCH_PATH,
+                null
+            );
         } catch (e) {
-            logError(`Failed to enumerate children of ${directory.get_path()}: ${e.message}`);
-            return;
-        }
-
-        let fileInfo;
-        while ((fileInfo = enumerator.next_file(null)) !== null) {
-            let child = directory.get_child(fileInfo.get_name());
-            if (fileInfo.get_file_type() === Gio.FileType.DIRECTORY) {
-                this._deleteDirectoryRecursive(child);
-            } else {
-                try {
-                    child.delete(null);
-                } catch (e) {
-                    logError(`Failed to delete file ${child.get_path()}: ${e.message}`);
-                }
-            }
-        }
-        enumerator.close(null);
-
-        try {
-            directory.delete(null);
-        } catch (e) {
-            logError(`Failed to delete directory ${directory.get_path()}: ${e.message}`);
+            logError(`Failed to spawn rm -rf for directory ${directory.get_path()}: ${e.message}`);
         }
     }
 

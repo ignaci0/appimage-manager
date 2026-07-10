@@ -3,7 +3,7 @@ import GLib from 'gi://GLib';
 import { log, logError } from './logger.js';
 
 export class LauncherService {
-    constructor() {}
+    constructor() { }
 
     _getDesktopDir() {
         const desktopDir = Gio.File.new_for_path(GLib.build_pathv('/', [GLib.get_user_data_dir(), 'applications']));
@@ -34,20 +34,25 @@ Categories=${appImageMetadata.categories ? appImageMetadata.categories.join(';')
 StartupNotify=true
 `;
 
-        try {
-            desktopFile.replace_contents(
-                content,
-                null, // etag
-                false, // make_backup
-                Gio.FileCreateFlags.REPLACE_DESTINATION,
-                null // cancellable
-            );
-            log(`Created launcher for ${appImageMetadata.name} at ${desktopFilePath}`);
-            return desktopFilePath;
-        } catch (e) {
-            logError(`Failed to create launcher for ${appImageMetadata.name}: ${e.message}`);
-            return null;
-        }
+        let encoder = new TextEncoder();
+        let bytes = new GLib.Bytes(encoder.encode(content));
+
+        desktopFile.replace_contents_bytes_async(
+            bytes,
+            null, // etag
+            false, // make_backup
+            Gio.FileCreateFlags.REPLACE_DESTINATION,
+            null, // cancellable
+            (file, res) => {
+                try {
+                    file.replace_contents_finish(res);
+                    log(`Created launcher for ${appImageMetadata.name} at ${desktopFilePath}`);
+                } catch (e) {
+                    logError(`Failed to create launcher for ${appImageMetadata.name}: ${e.message}`);
+                }
+            }
+        );
+        return desktopFilePath;
     }
 
     deleteLauncher(appImageName) {
