@@ -100,4 +100,8 @@ export var CacheManager = GObject.registerClass({
         await this._cacheLoaded;
         return this._cache;
     }
+
+    getCachedDataSync() {
+        return this._cache;
+    }
 });

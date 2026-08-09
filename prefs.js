@@ -50,6 +50,16 @@ export default class AppImageManagerPreferences extends ExtensionPreferences {
         monitoredDirectoryRow.add_suffix(monitoredDirectoryButton);
         monitoredDirectoryRow.activatable_widget = monitoredDirectoryButton;
 
+        const deepIconSearchRow = new Adw.SwitchRow({
+            title: 'Deep Icon Search',
+            subtitle: 'Search deeper inside the AppImage package if icons are not in standard locations',
+            active: settings.get_boolean('deep-icon-search'),
+        });
+        deepIconSearchRow.connect('notify::active', () => {
+            settings.set_boolean('deep-icon-search', deepIconSearchRow.active);
+        });
+        group.add(deepIconSearchRow);
+
         window.add(page);
     }
 }

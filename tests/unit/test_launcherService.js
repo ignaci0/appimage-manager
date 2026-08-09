@@ -26,11 +26,51 @@ describe('LauncherService', () => {
       query_exists: jest.fn(() => true),
       delete: jest.fn(),
       get_path: jest.fn(() => '/home/user/.local/share/applications'),
+      replace_contents_bytes_async: jest.fn(),
     };
     Gio.File.new_for_path.mockReturnValue(mockFile);
 
     const result = launcherService.deleteLauncher('My Cool App');
     expect(result).toBe(true);
     expect(mockFile.delete).toHaveBeenCalled();
+  });
+
+  it('should patch shipped desktop file correctly', () => {
+    const Gio = require('gi://Gio');
+    const mockFile = Gio.File.new_for_path();
+    mockFile.replace_contents_bytes_async.mockClear();
+
+    const originalDesktopContent = `[Desktop Entry]
+Name=Original Name
+Comment=Original Comment
+Exec=AppRun --no-sandbox %U
+Icon=anythingllm-desktop
+Categories=Network;InstantMessaging;
+StartupWMClass=AnythingLLM
+MimeType=x-scheme-handler/anythingllm;
+`;
+
+    const metadata = {
+      name: 'AnythingLLM',
+      path: '/home/user/Applications/AnythingLLM.AppImage',
+      icon: '/home/user/.local/share/icons/hicolor/256x256/apps/AnythingLLM.png',
+      desktopContent: originalDesktopContent,
+    };
+
+    launcherService.createLauncher(metadata);
+
+    expect(mockFile.replace_contents_bytes_async).toHaveBeenCalled();
+    const passedBytes = mockFile.replace_contents_bytes_async.mock.calls[0][0];
+    
+    const decoder = new TextDecoder('utf-8');
+    const writtenContent = decoder.decode(passedBytes.array);
+
+    expect(writtenContent).toContain('Name=Original Name');
+    expect(writtenContent).toContain('Comment=Original Comment');
+    expect(writtenContent).toContain('Exec="/home/user/Applications/AnythingLLM.AppImage" --no-sandbox %U');
+    expect(writtenContent).toContain('Icon=/home/user/.local/share/icons/hicolor/256x256/apps/AnythingLLM.png');
+    expect(writtenContent).toContain('Categories=Network;InstantMessaging;');
+    expect(writtenContent).toContain('StartupWMClass=AnythingLLM');
+    expect(writtenContent).toContain('MimeType=x-scheme-handler/anythingllm;');
   });
 });

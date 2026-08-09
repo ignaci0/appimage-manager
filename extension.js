@@ -18,7 +18,7 @@ export default class AppImageManagerExtension extends Extension {
 
         this._settingsManager = new SettingsManager(this);
         this._fileMonitor = new FileMonitor();
-        this._appImageManager = new AppImageManager(this._fileMonitor);
+        this._appImageManager = new AppImageManager(this._fileMonitor, this._settingsManager);
         this._launcherService = new LauncherService();
 
         let monitoredDirectory = this._settingsManager.getMonitoredDirectory();
@@ -40,20 +40,13 @@ export default class AppImageManagerExtension extends Extension {
         log(`Disabling ${this.metadata.name} extension`);
         this._fileMonitor.stopMonitoring();
 
-        let monitoredDirectory = this._settingsManager.getMonitoredDirectory();
-        let dir = Gio.File.new_for_path(monitoredDirectory);
-        if (dir.query_exists(null)) {
-            let enumerator = dir.enumerate_children('standard::name,standard::type', Gio.FileQueryInfoFlags.NONE, null);
-            let fileInfo;
-            while ((fileInfo = enumerator.next_file(null)) !== null) {
-                let child = dir.get_child(fileInfo.get_name());
-                if (fileInfo.get_file_type() === Gio.FileType.REGULAR && this._appImageManager.isAppImage(child.get_path())) {
-                    let fileName = GLib.path_get_basename(child.get_path());
-                    let appImageName = fileName.replace(/\.AppImage$/, '');
-                    this._launcherService.deleteLauncher(appImageName);
+        if (this._appImageManager) {
+            let cache = this._appImageManager.getCache();
+            for (let path in cache) {
+                if (cache[path] && cache[path].name) {
+                    this._launcherService.deleteLauncher(cache[path].name);
                 }
             }
-            enumerator.close(null);
         }
 
         this._launcherService = null;

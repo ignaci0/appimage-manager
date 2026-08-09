@@ -18,12 +18,63 @@ export class LauncherService {
         return GLib.build_pathv('/', [desktopDir.get_path(), `${appImageName}.desktop`]);
     }
 
+    _patchDesktopContent(content, appPath, iconPath) {
+        let lines = content.split('\n');
+        let hasExec = false;
+        let hasIcon = false;
+        let hasDesktopEntryHeader = false;
+
+        for (let i = 0; i < lines.length; i++) {
+            let line = lines[i];
+            
+            if (line.trim() === '[Desktop Entry]') {
+                hasDesktopEntryHeader = true;
+            }
+
+            if (line.startsWith('Exec=')) {
+                let match = line.match(/^Exec=\s*(["']?)([^\s"']+)(["']?)(.*)$/);
+                if (match) {
+                    lines[i] = `Exec="${appPath}"${match[4]}`;
+                } else {
+                    lines[i] = `Exec="${appPath}"`;
+                }
+                hasExec = true;
+            } else if (line.startsWith('Icon=')) {
+                lines[i] = `Icon=${iconPath || 'application-x-appimage'}`;
+                hasIcon = true;
+            }
+        }
+
+        // If headers/fields are missing, safely append them
+        if (!hasExec) {
+            lines.push(`Exec="${appPath}"`);
+        }
+        if (!hasIcon) {
+            lines.push(`Icon=${iconPath || 'application-x-appimage'}`);
+        }
+
+        let patchedContent = lines.join('\n');
+        if (!hasDesktopEntryHeader) {
+            patchedContent = '[Desktop Entry]\n' + patchedContent;
+        }
+        
+        return patchedContent;
+    }
+
     createLauncher(appImageMetadata) {
         log(`Creating launcher for ${appImageMetadata.name} with icon: ${appImageMetadata.icon}`);
         let desktopFilePath = this._getDesktopFilePath(appImageMetadata.name);
         let desktopFile = Gio.File.new_for_path(desktopFilePath);
 
-        let content = `[Desktop Entry]
+        let content;
+        if (appImageMetadata.desktopContent) {
+            content = this._patchDesktopContent(
+                appImageMetadata.desktopContent,
+                appImageMetadata.path,
+                appImageMetadata.icon
+            );
+        } else {
+            content = `[Desktop Entry]
 # Created by AppImage Manager
 Name=${appImageMetadata.name}
 Exec=${appImageMetadata.path}
@@ -33,6 +84,7 @@ Type=Application
 Categories=${appImageMetadata.categories ? appImageMetadata.categories.join(';') + ';' : 'Utility;'}
 StartupNotify=true
 `;
+        }
 
         let encoder = new TextEncoder();
         let bytes = new GLib.Bytes(encoder.encode(content));

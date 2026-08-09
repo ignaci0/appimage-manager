@@ -1,8 +1,13 @@
 const mockFile = (path) => ({
   query_exists: jest.fn(() => false),
   make_directory_with_parents: jest.fn(),
+  get_parent: jest.fn(() => mockFile(path.substring(0, path.lastIndexOf('/')))),
+  create: jest.fn(() => ({})),
   replace_contents: jest.fn(),
   replace_contents_async: jest.fn(function (contents, etag, make_backup, flags, cancellable, callback) {
+    if (callback) callback(this, {});
+  }),
+  replace_contents_bytes_async: jest.fn(function (bytes, etag, make_backup, flags, cancellable, callback) {
     if (callback) callback(this, {});
   }),
   replace_contents_finish: jest.fn(() => [true, null]),
@@ -40,5 +45,9 @@ module.exports = {
   },
   FileMonitorFlags: {
     NONE: 0,
+  },
+  FileType: {
+    REGULAR: 1,
+    DIRECTORY: 2,
   },
 };

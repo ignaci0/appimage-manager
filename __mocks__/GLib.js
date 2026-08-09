@@ -1,6 +1,14 @@
+class Bytes {
+  constructor(array) {
+    this.array = array;
+  }
+}
+
 module.exports = {
   build_pathv: jest.fn((sep, parts) => parts.join(sep)),
   get_user_data_dir: jest.fn(() => '/home/user/.local/share'),
+  get_home_dir: jest.fn(() => '/home/user'),
+  get_user_cache_dir: jest.fn(() => '/home/user/.cache'),
   get_tmp_dir: jest.fn(() => '/tmp'),
   uuid_string_random: jest.fn(() => 'mock-uuid'),
   path_get_basename: jest.fn((path) => path.split('/').pop()),
@@ -11,4 +19,6 @@ module.exports = {
   SpawnFlags: {
     DO_NOT_REAP_CHILD: 1,
   },
+  Bytes,
 };
+

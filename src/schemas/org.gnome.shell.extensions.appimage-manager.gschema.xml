@@ -6,5 +6,10 @@
       <summary>Directory to monitor for AppImage files</summary>
       <description>The absolute path to the directory where AppImage files are stored and monitored for changes.</description>
     </key>
+    <key name="deep-icon-search" type="b">
+      <default>false</default>
+      <summary>Enable deep search for icons</summary>
+      <description>If enabled, perform a deeper search for actual icons inside the AppImage package if they are not in the predefined locations.</description>
+    </key>
   </schema>
 </schemalist>

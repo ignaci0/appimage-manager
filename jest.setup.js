@@ -1,6 +1,8 @@
 const mockFile = {
   query_exists: jest.fn(() => false),
   make_directory_with_parents: jest.fn(() => { throw new Error('Mock error'); }),
+  get_parent: jest.fn(() => mockFile),
+  create: jest.fn(() => ({})),
   monitor_directory: jest.fn(() => ({
     connect: jest.fn(),
     cancel: jest.fn(),
@@ -13,6 +15,10 @@ const mockFile = {
   set_attribute_uint32: jest.fn(),
   get_path: jest.fn(path => `/home/user/.local/share/applications`),
   load_contents: jest.fn(() => [false, null]),
+  replace_contents_bytes_async: jest.fn((bytes, etag, make_backup, flags, cancellable, callback) => {
+    if (callback) callback(mockFile, {});
+  }),
+  replace_contents_finish: jest.fn(() => [true, null]),
 };
 
 global.imports = {
@@ -38,12 +44,18 @@ global.imports = {
       FileCreateFlags: {
         REPLACE_DESTINATION: 1,
       },
+      FileType: {
+        REGULAR: 1,
+        DIRECTORY: 2,
+      },
     },
     GLib: {
       get_home_dir: jest.fn(() => '/home/user'),
       get_user_data_dir: jest.fn(() => '/home/user/.local/share'),
+      get_user_cache_dir: jest.fn(() => '/home/user/.cache'),
       build_pathv: jest.fn((sep, paths) => paths.join(sep)),
       path_get_basename: jest.fn(path => path.split('/').pop()),
+      Bytes: jest.fn().mockImplementation(array => ({ array })),
     },
   },
 };

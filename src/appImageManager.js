@@ -5,10 +5,23 @@ import { log, logError } from './logger.js';
 import { CacheManager } from './cacheManager.js';
 
 export class AppImageManager {
-    constructor(fileMonitor) {
+    constructor(fileMonitor = null, settingsManager = null) {
         this._launcherService = new LauncherService();
         this._fileMonitor = fileMonitor;
         this._cacheManager = new CacheManager();
+        this._settingsManager = settingsManager;
+    }
+
+    _isDeepIconSearchEnabled() {
+        if (!this._settingsManager) {
+            return false;
+        }
+        try {
+            return this._settingsManager.getDeepIconSearch();
+        } catch (e) {
+            logError(`Failed to read deep-icon-search setting: ${e.message}`);
+            return false;
+        }
     }
 
     async addAppImage(filePath) {
@@ -41,9 +54,21 @@ export class AppImageManager {
             return;
         }
 
-        const metadata = await this.extractMetadata(filePath);
-        this._launcherService.deleteLauncher(metadata.name);
+        const cached = await this._cacheManager.get(filePath);
+        let appName;
+        if (cached && cached.name) {
+            appName = cached.name;
+        } else {
+            const metadata = await this.extractMetadata(filePath);
+            appName = metadata.name;
+        }
+
+        this._launcherService.deleteLauncher(appName);
         await this._cacheManager.remove(filePath);
+    }
+
+    getCache() {
+        return this._cacheManager.getCachedDataSync();
     }
 
     isAppImage(filePath) {
@@ -83,7 +108,8 @@ export class AppImageManager {
                 path: filePath,
                 icon: null,
                 categories: ['Utility'], // Placeholder
-                desktopFilePath: null
+                desktopFilePath: null,
+                desktopContent: null
             };
         }
 
@@ -92,7 +118,8 @@ export class AppImageManager {
             path: filePath,
             icon: extractedMetadata.icon,
             categories: ['Utility'], // Placeholder
-            desktopFilePath: null
+            desktopFilePath: null,
+            desktopContent: extractedMetadata.desktopContent
         };
     }
 
@@ -130,9 +157,17 @@ export class AppImageManager {
             }
 
             const desktopFileMetadata = await this._findAndParseDesktopFile(squashfsRoot);
-            const appName = desktopFileMetadata ? desktopFileMetadata.name : null;
+            let appName = desktopFileMetadata ? desktopFileMetadata.name : null;
+            if (!appName) {
+                let fileName = GLib.path_get_basename(filePath);
+                appName = fileName.replace(/\.AppImage$/i, '');
+            }
 
-            let iconPath = this._findIcon(squashfsRoot, desktopFileMetadata ? desktopFileMetadata.icon : null);
+            let iconPath = this._findIcon(
+                squashfsRoot,
+                desktopFileMetadata ? desktopFileMetadata.icon : null,
+                appName
+            );
             if (!iconPath) {
                 logError('Icon not found in squashfs-root');
                 return null;
@@ -143,10 +178,33 @@ export class AppImageManager {
             if (!iconDir.query_exists(null)) {
                 iconDir.make_directory_with_parents(null);
             }
-            let newIconFile = iconDir.get_child(`${appName}.png`);
+            
+            // Preserve the extension of the source icon if it is svg/png, or inspect standard content type
+            let extension = 'png';
+            if (iconPath.toLowerCase().endsWith('.svg')) {
+                extension = 'svg';
+            } else if (iconPath.toLowerCase().endsWith('.png')) {
+                extension = 'png';
+            } else {
+                try {
+                    let info = iconFile.query_info('standard::content-type', Gio.FileQueryInfoFlags.NONE, null);
+                    let contentType = info.get_content_type();
+                    if (contentType && (contentType.includes('svg') || contentType.includes('xml'))) {
+                        extension = 'svg';
+                    }
+                } catch (e) {
+                    // Fallback to png
+                }
+            }
+
+            let newIconFile = iconDir.get_child(`${appName}.${extension}`);
             iconFile.copy(newIconFile, Gio.FileCopyFlags.OVERWRITE, null, null);
 
-            return { name: appName, icon: newIconFile.get_path() };
+            return {
+                name: appName,
+                icon: newIconFile.get_path(),
+                desktopContent: desktopFileMetadata ? desktopFileMetadata.desktopContent : null
+            };
         } finally {
             log(`Deleting directory: ${tempDir.get_path()}`);
             this._deleteDirectoryRecursive(tempDir);
@@ -205,25 +263,71 @@ export class AppImageManager {
                 }
             }
 
-            return { name, icon };
+            return { name, icon, desktopContent: contentsStr };
         } catch (e) {
             logError(`Failed to read desktop file: ${e.message}`);
             return null;
         }
     }
 
-    _findIcon(squashfsRoot, iconName) {
-        if (iconName) {
-            let baseName = iconName.replace(/\.[^/.]+$/, ""); // Remove extension
+    _findIcon(squashfsRoot, iconName, appName = null) {
+        let searchName = iconName || appName;
+        let baseName = searchName ? searchName.replace(/\.[^/.]+$/, "") : null;
 
-            // Search for the icon by name in the root of the squashfs
-            let iconFile = squashfsRoot.get_child(iconName);
+        // 1. Check icon file directly at the root (with exact name or common extensions)
+        if (iconName) {
+            let lowerName = iconName.toLowerCase();
+            if (lowerName.endsWith('.png') || lowerName.endsWith('.svg') || lowerName.endsWith('.xpm') || lowerName.endsWith('.ico')) {
+                let iconFile = squashfsRoot.get_child(iconName);
+                if (iconFile.query_exists(null)) {
+                    return iconFile.get_path();
+                }
+            }
+        }
+        if (baseName) {
+            let iconFile = squashfsRoot.get_child(`${baseName}.png`);
             if (iconFile.query_exists(null)) {
                 return iconFile.get_path();
             }
+            iconFile = squashfsRoot.get_child(`${baseName}.svg`);
+            if (iconFile.query_exists(null)) {
+                return iconFile.get_path();
+            }
+        }
 
-            // Search in usr/share/icons
-            let usrShareIcons = squashfsRoot.get_child('usr').get_child('share').get_child('icons');
+        // 2. Check .DirIcon (AppImage standard) at the root
+        let dirIconFile = squashfsRoot.get_child('.DirIcon');
+        if (dirIconFile.query_exists(null)) {
+            return dirIconFile.get_path();
+        }
+
+        // 3. Check usr/share/pixmaps (common location for Linux icons)
+        let usrSharePixmaps = Gio.File.new_for_path(GLib.build_pathv('/', [squashfsRoot.get_path(), 'usr', 'share', 'pixmaps']));
+        if (usrSharePixmaps.query_exists(null)) {
+            if (iconName) {
+                let lowerName = iconName.toLowerCase();
+                if (lowerName.endsWith('.png') || lowerName.endsWith('.svg') || lowerName.endsWith('.xpm') || lowerName.endsWith('.ico')) {
+                    let iconFile = usrSharePixmaps.get_child(iconName);
+                    if (iconFile.query_exists(null)) {
+                        return iconFile.get_path();
+                    }
+                }
+            }
+            if (baseName) {
+                let iconFile = usrSharePixmaps.get_child(`${baseName}.png`);
+                if (iconFile.query_exists(null)) {
+                    return iconFile.get_path();
+                }
+                iconFile = usrSharePixmaps.get_child(`${baseName}.svg`);
+                if (iconFile.query_exists(null)) {
+                    return iconFile.get_path();
+                }
+            }
+        }
+
+        // 4. Check usr/share/icons/hicolor (standard theme location)
+        if (baseName) {
+            let usrShareIcons = Gio.File.new_for_path(GLib.build_pathv('/', [squashfsRoot.get_path(), 'usr', 'share', 'icons']));
             if (usrShareIcons.query_exists(null)) {
                 let hicolorDir = usrShareIcons.get_child('hicolor');
                 if (hicolorDir.query_exists(null)) {
@@ -252,8 +356,112 @@ export class AppImageManager {
             }
         }
 
-        // Fallback to recursive search
+        // 5. Deep search (if enabled by configuration)
+        if (this._isDeepIconSearchEnabled() && baseName) {
+            let deepPath = this._deepSearchIcon(squashfsRoot, baseName);
+            if (deepPath) {
+                return deepPath;
+            }
+        }
+
+        // 6. Fallback to existing recursive search
         return this._findIconRecursive(squashfsRoot);
+    }
+
+    _deepSearchIcon(directory, baseName) {
+        // Step A: Search for exact matches recursively
+        let exactMatch = this._findIconExactRecursive(directory, baseName.toLowerCase());
+        if (exactMatch) {
+            return exactMatch;
+        }
+
+        // Step B: Search for partial matches containing baseName recursively
+        let partialMatch = this._findIconPartialRecursive(directory, baseName.toLowerCase());
+        if (partialMatch) {
+            return partialMatch;
+        }
+
+        return null;
+    }
+
+    _findIconExactRecursive(directory, lowerBaseName) {
+        let enumerator;
+        try {
+            enumerator = directory.enumerate_children('standard::name,standard::type', Gio.FileQueryInfoFlags.NONE, null);
+        } catch (e) {
+            return null;
+        }
+
+        let fileInfo;
+        let foundPath = null;
+        let subdirs = [];
+
+        while ((fileInfo = enumerator.next_file(null)) !== null) {
+            let child = directory.get_child(fileInfo.get_name());
+            if (fileInfo.get_file_type() === Gio.FileType.DIRECTORY) {
+                subdirs.push(child);
+            } else {
+                let name = fileInfo.get_name().toLowerCase();
+                if (name === `${lowerBaseName}.png` || name === `${lowerBaseName}.svg`) {
+                    foundPath = child.get_path();
+                    break;
+                }
+            }
+        }
+        enumerator.close(null);
+
+        if (foundPath) {
+            return foundPath;
+        }
+
+        for (let subdir of subdirs) {
+            foundPath = this._findIconExactRecursive(subdir, lowerBaseName);
+            if (foundPath) {
+                return foundPath;
+            }
+        }
+
+        return null;
+    }
+
+    _findIconPartialRecursive(directory, lowerBaseName) {
+        let enumerator;
+        try {
+            enumerator = directory.enumerate_children('standard::name,standard::type', Gio.FileQueryInfoFlags.NONE, null);
+        } catch (e) {
+            return null;
+        }
+
+        let fileInfo;
+        let foundPath = null;
+        let subdirs = [];
+
+        while ((fileInfo = enumerator.next_file(null)) !== null) {
+            let child = directory.get_child(fileInfo.get_name());
+            if (fileInfo.get_file_type() === Gio.FileType.DIRECTORY) {
+                subdirs.push(child);
+            } else {
+                let name = fileInfo.get_name().toLowerCase();
+                if ((name.endsWith('.png') || name.endsWith('.svg')) && name.includes(lowerBaseName)) {
+                    foundPath = child.get_path();
+                    break;
+                }
+            }
+        }
+        enumerator.close(null);
+
+        if (foundPath) {
+            return foundPath;
+        }
+
+        for (let subdir of subdirs) {
+            foundPath = this._findIconPartialRecursive(subdir, lowerBaseName);
+            if (foundPath) {
+                return foundPath;
+            }
+        }
+
+        return null;
     }
 
     _findIconRecursive(directory) {
