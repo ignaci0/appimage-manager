@@ -47,6 +47,16 @@ export default class AppImageManagerExtension extends Extension {
                     this._launcherService.deleteLauncher(cache[path].name);
                 }
             }
+            try {
+                let cacheFile = Gio.File.new_for_path(
+                    GLib.get_user_cache_dir() + '/appimage-manager/cache.json'
+                );
+                if (cacheFile.query_exists(null)) {
+                    cacheFile.delete(null);
+                }
+            } catch (e) {
+                logError(`Failed to delete cache file: ${e.message}`);
+            }
         }
 
         this._launcherService = null;
