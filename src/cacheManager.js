@@ -23,7 +23,10 @@ export var CacheManager = GObject.registerClass({
         return new Promise((resolve) => {
             if (!this._cacheFile.query_exists(null)) {
                 log('Cache file does not exist. Creating it.');
-                this._cacheFile.get_parent().make_directory_with_parents(null);
+                let parentDir = this._cacheFile.get_parent();
+                if (!parentDir.query_exists(null)) {
+                    parentDir.make_directory_with_parents(null);
+                }
                 this._cacheFile.create(Gio.FileCreateFlags.NONE, null);
                 this._saveCache().then(() => resolve());
             } else {
