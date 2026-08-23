@@ -4,7 +4,8 @@
   "description": "AppImage Manager Gnome Extension",
   "main": "extension.js",
   "scripts": {
-    "test": "jest"
+    "test": "jest",
+    "pack": "gnome-extensions pack --force --schema=src/schemas/org.gnome.shell.extensions.appimage-manager.gschema.xml --extra-source=src/appImageManager.js --extra-source=src/cacheManager.js --extra-source=src/fileMonitor.js --extra-source=src/launcherService.js --extra-source=src/logger.js --extra-source=src/settingsManager.js ."
   },
   "author": "",
   "license": "ISC",

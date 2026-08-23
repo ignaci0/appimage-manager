@@ -24,10 +24,53 @@ export class AppImageManager {
         }
     }
 
+    _resolveIconPath(appName, cachedIcon) {
+        if (appName) {
+            let hicolorDir = GLib.build_pathv('/', [GLib.get_user_data_dir(), 'icons', 'hicolor']);
+            let pngPath = GLib.build_pathv('/', [hicolorDir, '256x256', 'apps', `${appName}.png`]);
+            if (Gio.File.new_for_path(pngPath).query_exists(null)) {
+                return pngPath;
+            }
+            let scalableSvgPath = GLib.build_pathv('/', [hicolorDir, 'scalable', 'apps', `${appName}.svg`]);
+            if (Gio.File.new_for_path(scalableSvgPath).query_exists(null)) {
+                return scalableSvgPath;
+            }
+            let oldSvgPath = GLib.build_pathv('/', [hicolorDir, '256x256', 'apps', `${appName}.svg`]);
+            if (Gio.File.new_for_path(oldSvgPath).query_exists(null)) {
+                return oldSvgPath;
+            }
+        }
+        if (cachedIcon && Gio.File.new_for_path(cachedIcon).query_exists(null)) {
+            return cachedIcon;
+        }
+        return null;
+    }
+
     async addAppImage(filePath) {
-        if (await this._cacheManager.get(filePath)) {
-            log(`Skipping already cached AppImage: ${filePath}`);
-            return;
+        let cached = await this._cacheManager.get(filePath);
+        if (cached) {
+            let iconPath = this._resolveIconPath(cached.name, cached.icon);
+            if (!iconPath) {
+                cached = null;
+            } else {
+                cached.icon = iconPath;
+                let launcherExists = this._launcherService.launcherExists(cached.name);
+                if (launcherExists) {
+                    if (!this._launcherService.hasValidIcon(cached.name)) {
+                        log(`Launcher for ${cached.name} has fallback icon. Recreating launcher with valid icon.`);
+                        this._launcherService.createLauncher(cached);
+                        await this._cacheManager.add(cached);
+                    } else {
+                        log(`Skipping already cached AppImage: ${filePath}`);
+                    }
+                    return;
+                }
+
+                log(`Launcher for cached AppImage ${filePath} is missing. Recreating.`);
+                this._launcherService.createLauncher(cached);
+                await this._cacheManager.add(cached);
+                return;
+            }
         }
 
         if (!this.isAppImage(filePath)) {
@@ -42,7 +85,7 @@ export class AppImageManager {
         }
 
         this._launcherService.createLauncher(metadata);
-        await this._cacheManager.add({ path: filePath, name: metadata.name });
+        await this._cacheManager.add(metadata);
 
         if (this._fileMonitor) {
             this._fileMonitor.resume();
@@ -50,20 +93,29 @@ export class AppImageManager {
     }
 
     async removeAppImage(filePath) {
-        if (!this.isAppImage(filePath)) {
-            return;
-        }
-
         const cached = await this._cacheManager.get(filePath);
         let appName;
         if (cached && cached.name) {
             appName = cached.name;
+        } else if (this.isAppImage(filePath)) {
+            let fileName = GLib.path_get_basename(filePath);
+            appName = fileName.replace(/\.AppImage$/i, '');
         } else {
-            const metadata = await this.extractMetadata(filePath);
-            appName = metadata.name;
+            return;
         }
 
         this._launcherService.deleteLauncher(appName);
+        if (cached && cached.icon) {
+            let iconFile = Gio.File.new_for_path(cached.icon);
+            if (iconFile.query_exists(null)) {
+                try {
+                    iconFile.delete(null);
+                    log(`Deleted cached icon for ${appName} at ${cached.icon}`);
+                } catch (e) {
+                    logError(`Failed to delete icon for ${appName}: ${e.message}`);
+                }
+            }
+        }
         await this._cacheManager.remove(filePath);
     }
 
@@ -174,12 +226,6 @@ export class AppImageManager {
             }
 
             let iconFile = Gio.File.new_for_path(iconPath);
-            let iconDir = Gio.File.new_for_path(GLib.build_pathv('/', [GLib.get_user_data_dir(), 'icons', 'hicolor', '256x256', 'apps']));
-            if (!iconDir.query_exists(null)) {
-                iconDir.make_directory_with_parents(null);
-            }
-            
-            // Preserve the extension of the source icon if it is svg/png, or inspect standard content type
             let extension = 'png';
             if (iconPath.toLowerCase().endsWith('.svg')) {
                 extension = 'svg';
@@ -195,6 +241,12 @@ export class AppImageManager {
                 } catch (e) {
                     // Fallback to png
                 }
+            }
+
+            let subDir = extension === 'svg' ? 'scalable' : '256x256';
+            let iconDir = Gio.File.new_for_path(GLib.build_pathv('/', [GLib.get_user_data_dir(), 'icons', 'hicolor', subDir, 'apps']));
+            if (!iconDir.query_exists(null)) {
+                iconDir.make_directory_with_parents(null);
             }
 
             let newIconFile = iconDir.get_child(`${appName}.${extension}`);

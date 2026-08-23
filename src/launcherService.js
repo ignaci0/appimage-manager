@@ -39,6 +39,8 @@ export class LauncherService {
                     lines[i] = `Exec="${appPath}"`;
                 }
                 hasExec = true;
+            } else if (line.startsWith('TryExec=')) {
+                lines[i] = `TryExec=${appPath}`;
             } else if (line.startsWith('Icon=')) {
                 lines[i] = `Icon=${iconPath || 'application-x-appimage'}`;
                 hasIcon = true;
@@ -105,6 +107,38 @@ StartupNotify=true
             }
         );
         return desktopFilePath;
+    }
+
+    launcherExists(appImageName) {
+        let desktopFilePath = this._getDesktopFilePath(appImageName);
+        let desktopFile = Gio.File.new_for_path(desktopFilePath);
+        return desktopFile.query_exists(null);
+    }
+
+    hasValidIcon(appImageName) {
+        let desktopFilePath = this._getDesktopFilePath(appImageName);
+        let desktopFile = Gio.File.new_for_path(desktopFilePath);
+        if (!desktopFile.query_exists(null)) {
+            return false;
+        }
+        try {
+            let [ok, contents] = desktopFile.load_contents(null);
+            if (ok && contents) {
+                let decoder = new TextDecoder('utf-8');
+                let contentStr = decoder.decode(contents);
+                for (let line of contentStr.split('\n')) {
+                    if (line.startsWith('Icon=')) {
+                        let iconVal = line.substring(5).trim();
+                        if (iconVal && iconVal !== 'application-x-appimage') {
+                            return true;
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            // Ignore error
+        }
+        return false;
     }
 
     deleteLauncher(appImageName) {

@@ -38,15 +38,8 @@ export default class AppImageManagerExtension extends Extension {
 
     disable() {
         log(`Disabling ${this.metadata.name} extension`);
-        this._fileMonitor.stopMonitoring();
-
-        if (this._appImageManager) {
-            let cache = this._appImageManager.getCache();
-            for (let path in cache) {
-                if (cache[path] && cache[path].name) {
-                    this._launcherService.deleteLauncher(cache[path].name);
-                }
-            }
+        if (this._fileMonitor) {
+            this._fileMonitor.stopMonitoring();
         }
 
         this._launcherService = null;

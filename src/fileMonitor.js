@@ -34,7 +34,9 @@ export class FileMonitor {
             switch (eventType) {
                 case Gio.FileMonitorEvent.CHANGES_DONE_HINT:
                 case Gio.FileMonitorEvent.CREATED:
+                case Gio.FileMonitorEvent.MOVED_IN:
                     {
+                        if (!file) break;
                         const filePath = file.get_path();
                         if (!this._addedFiles.includes(filePath)) {
                             this._addedFiles.push(filePath);
@@ -82,8 +84,18 @@ export class FileMonitor {
                     }
                     break;
                 case Gio.FileMonitorEvent.DELETED:
-                    if (this._onFileRemoved) {
+                case Gio.FileMonitorEvent.MOVED_OUT:
+                    if (this._onFileRemoved && file) {
                         this._onFileRemoved(file.get_path());
+                    }
+                    break;
+                case Gio.FileMonitorEvent.RENAMED:
+                case Gio.FileMonitorEvent.MOVED:
+                    if (file && this._onFileRemoved) {
+                        this._onFileRemoved(file.get_path());
+                    }
+                    if (otherFile && this._onFileAdded) {
+                        this._onFileAdded(otherFile.get_path());
                     }
                     break;
                 default:

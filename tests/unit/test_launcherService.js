@@ -73,4 +73,101 @@ MimeType=x-scheme-handler/anythingllm;
     expect(writtenContent).toContain('StartupWMClass=AnythingLLM');
     expect(writtenContent).toContain('MimeType=x-scheme-handler/anythingllm;');
   });
+
+  it('should patch TryExec to point to appPath if present', () => {
+    const Gio = require('gi://Gio');
+    const mockFile = Gio.File.new_for_path();
+    mockFile.replace_contents_bytes_async.mockClear();
+
+    const originalDesktopContent = `[Desktop Entry]
+Name=Eden
+TryExec=eden
+Exec=eden %f
+Icon=dev.eden_emu.eden
+`;
+
+    const metadata = {
+      name: 'Eden',
+      path: '/home/user/Applications/Eden.AppImage',
+      icon: '/home/user/.local/share/icons/hicolor/scalable/apps/Eden.svg',
+      desktopContent: originalDesktopContent,
+    };
+
+    launcherService.createLauncher(metadata);
+
+    expect(mockFile.replace_contents_bytes_async).toHaveBeenCalled();
+    const passedBytes = mockFile.replace_contents_bytes_async.mock.calls[0][0];
+    const decoder = new TextDecoder('utf-8');
+    const writtenContent = decoder.decode(passedBytes.array);
+
+    expect(writtenContent).toContain('TryExec=/home/user/Applications/Eden.AppImage');
+    expect(writtenContent).toContain('Exec="/home/user/Applications/Eden.AppImage" %f');
+  });
+
+  describe('launcherExists', () => {
+    it('should return true if desktop file exists', () => {
+      const Gio = require('gi://Gio');
+      const mockFile = {
+        query_exists: jest.fn(() => true),
+        get_path: jest.fn(() => '/home/user/.local/share/applications'),
+      };
+      Gio.File.new_for_path.mockReturnValue(mockFile);
+
+      const exists = launcherService.launcherExists('My Cool App');
+      expect(exists).toBe(true);
+    });
+
+    it('should return false if desktop file does not exist', () => {
+      const Gio = require('gi://Gio');
+      const mockFile = {
+        query_exists: jest.fn(() => false),
+        get_path: jest.fn(() => '/home/user/.local/share/applications'),
+        make_directory_with_parents: jest.fn(),
+      };
+      Gio.File.new_for_path.mockReturnValue(mockFile);
+
+      const exists = launcherService.launcherExists('My Cool App');
+      expect(exists).toBe(false);
+    });
+  });
+
+  describe('hasValidIcon', () => {
+    it('should return false if desktop file does not exist', () => {
+      const Gio = require('gi://Gio');
+      const mockFile = {
+        query_exists: jest.fn(() => false),
+        get_path: jest.fn(() => '/home/user/.local/share/applications'),
+        make_directory_with_parents: jest.fn(),
+      };
+      Gio.File.new_for_path.mockReturnValue(mockFile);
+
+      expect(launcherService.hasValidIcon('My Cool App')).toBe(false);
+    });
+
+    it('should return false if desktop file has fallback icon application-x-appimage', () => {
+      const Gio = require('gi://Gio');
+      const encoder = new TextEncoder();
+      const mockFile = {
+        query_exists: jest.fn(() => true),
+        get_path: jest.fn(() => '/home/user/.local/share/applications'),
+        load_contents: jest.fn(() => [true, encoder.encode('[Desktop Entry]\nIcon=application-x-appimage')]),
+      };
+      Gio.File.new_for_path.mockReturnValue(mockFile);
+
+      expect(launcherService.hasValidIcon('My Cool App')).toBe(false);
+    });
+
+    it('should return true if desktop file has valid icon path', () => {
+      const Gio = require('gi://Gio');
+      const encoder = new TextEncoder();
+      const mockFile = {
+        query_exists: jest.fn(() => true),
+        get_path: jest.fn(() => '/home/user/.local/share/applications'),
+        load_contents: jest.fn(() => [true, encoder.encode('[Desktop Entry]\nIcon=/home/user/.local/share/icons/hicolor/256x256/apps/My Cool App.png')]),
+      };
+      Gio.File.new_for_path.mockReturnValue(mockFile);
+
+      expect(launcherService.hasValidIcon('My Cool App')).toBe(true);
+    });
+  });
 });

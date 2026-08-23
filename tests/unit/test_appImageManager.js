@@ -150,5 +150,123 @@ describe('AppImageManager', () => {
 
       expect(deleteLauncherMock).toHaveBeenCalledWith('AnyCoolApp');
     });
+
+    it('should delete cached icon file if present', async () => {
+      const Gio = require('gi://Gio');
+      const originalImpl = Gio.File.new_for_path.getMockImplementation();
+      const mockIconFile = {
+        query_exists: jest.fn(() => true),
+        delete: jest.fn(),
+      };
+      Gio.File.new_for_path.mockImplementation(path => {
+        if (path === '/path/to/icon.png') return mockIconFile;
+        return originalImpl ? originalImpl(path) : mockFile;
+      });
+
+      await appImageManager._cacheManager.add({
+        path: '/path/to/AppWithIcon.AppImage',
+        name: 'AppWithIcon',
+        icon: '/path/to/icon.png'
+      });
+
+      await appImageManager.removeAppImage('/path/to/AppWithIcon.AppImage');
+
+      expect(mockIconFile.delete).toHaveBeenCalled();
+      if (originalImpl) {
+        Gio.File.new_for_path.mockImplementation(originalImpl);
+      }
+    });
+  });
+
+  describe('addAppImage', () => {
+    it('should skip if cached, launcher exists, and has valid icon', async () => {
+      const createLauncherMock = jest.spyOn(appImageManager._launcherService, 'createLauncher').mockImplementation(() => {});
+      const launcherExistsMock = jest.spyOn(appImageManager._launcherService, 'launcherExists').mockReturnValue(true);
+      const hasValidIconMock = jest.spyOn(appImageManager._launcherService, 'hasValidIcon').mockReturnValue(true);
+      const extractMetadataMock = jest.spyOn(appImageManager, 'extractMetadata');
+      jest.spyOn(appImageManager, '_resolveIconPath').mockReturnValue('/path/to/icon.png');
+
+      await appImageManager._cacheManager.add({
+        path: '/path/to/AnythingLLMDesktop.AppImage',
+        name: 'AnythingLLM',
+        icon: '/path/to/icon.png'
+      });
+
+      await appImageManager.addAppImage('/path/to/AnythingLLMDesktop.AppImage');
+
+      expect(launcherExistsMock).toHaveBeenCalledWith('AnythingLLM');
+      expect(hasValidIconMock).toHaveBeenCalledWith('AnythingLLM');
+      expect(createLauncherMock).not.toHaveBeenCalled();
+      expect(extractMetadataMock).not.toHaveBeenCalled();
+    });
+
+    it('should recreate launcher with valid icon if launcher exists but has fallback icon', async () => {
+      const createLauncherMock = jest.spyOn(appImageManager._launcherService, 'createLauncher').mockImplementation(() => {});
+      const launcherExistsMock = jest.spyOn(appImageManager._launcherService, 'launcherExists').mockReturnValue(true);
+      const hasValidIconMock = jest.spyOn(appImageManager._launcherService, 'hasValidIcon').mockReturnValue(false);
+      const extractMetadataMock = jest.spyOn(appImageManager, 'extractMetadata');
+      jest.spyOn(appImageManager, '_resolveIconPath').mockReturnValue('/path/to/icon.png');
+
+      await appImageManager._cacheManager.add({
+        path: '/path/to/AnythingLLMDesktop.AppImage',
+        name: 'AnythingLLM'
+      });
+
+      await appImageManager.addAppImage('/path/to/AnythingLLMDesktop.AppImage');
+
+      expect(launcherExistsMock).toHaveBeenCalledWith('AnythingLLM');
+      expect(hasValidIconMock).toHaveBeenCalledWith('AnythingLLM');
+      expect(createLauncherMock).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'AnythingLLM',
+        icon: '/path/to/icon.png'
+      }));
+      expect(extractMetadataMock).not.toHaveBeenCalled();
+    });
+
+    it('should recreate launcher if cached but launcher is missing', async () => {
+      const createLauncherMock = jest.spyOn(appImageManager._launcherService, 'createLauncher').mockImplementation(() => {});
+      const launcherExistsMock = jest.spyOn(appImageManager._launcherService, 'launcherExists').mockReturnValue(false);
+      const extractMetadataMock = jest.spyOn(appImageManager, 'extractMetadata');
+      jest.spyOn(appImageManager, '_resolveIconPath').mockReturnValue('/path/to/icon.png');
+
+      const cachedMetadata = {
+        path: '/path/to/AnythingLLMDesktop.AppImage',
+        name: 'AnythingLLM',
+        icon: '/path/to/icon.png',
+        categories: ['Utility']
+      };
+      await appImageManager._cacheManager.add(cachedMetadata);
+
+      await appImageManager.addAppImage('/path/to/AnythingLLMDesktop.AppImage');
+
+      expect(launcherExistsMock).toHaveBeenCalledWith('AnythingLLM');
+      expect(createLauncherMock).toHaveBeenCalledWith(expect.objectContaining(cachedMetadata));
+      expect(extractMetadataMock).not.toHaveBeenCalled();
+    });
+
+    it('should extract metadata and create launcher if not cached', async () => {
+      const createLauncherMock = jest.spyOn(appImageManager._launcherService, 'createLauncher').mockImplementation(() => {});
+      const mockMetadata = {
+        name: 'NewApp',
+        path: '/path/to/NewApp.AppImage',
+        icon: '/path/to/icon.png',
+        categories: ['Utility'],
+        desktopFilePath: null,
+        desktopContent: null
+      };
+      const extractMetadataMock = jest.spyOn(appImageManager, 'extractMetadata').mockResolvedValue(mockMetadata);
+      jest.spyOn(appImageManager, '_resolveIconPath').mockReturnValue(null);
+      
+      // Ensure it is not in cache
+      await appImageManager._cacheManager.remove('/path/to/NewApp.AppImage');
+
+      await appImageManager.addAppImage('/path/to/NewApp.AppImage');
+
+      expect(extractMetadataMock).toHaveBeenCalledWith('/path/to/NewApp.AppImage');
+      expect(createLauncherMock).toHaveBeenCalledWith(mockMetadata);
+      
+      const cached = await appImageManager._cacheManager.get('/path/to/NewApp.AppImage');
+      expect(cached).toEqual(mockMetadata);
+    });
   });
 });
