@@ -115,15 +115,29 @@ StartupNotify=true
         return desktopFile.query_exists(null);
     }
 
-    hasValidIcon(appImageName) {
+    async hasValidIcon(appImageName) {
         let desktopFilePath = this._getDesktopFilePath(appImageName);
         let desktopFile = Gio.File.new_for_path(desktopFilePath);
         if (!desktopFile.query_exists(null)) {
             return false;
         }
         try {
-            let [ok, contents] = desktopFile.load_contents(null);
-            if (ok && contents) {
+            const contents = await new Promise((resolve) => {
+                desktopFile.load_contents_async(null, (file, res) => {
+                    try {
+                        let [ok, contents] = file.load_contents_finish(res);
+                        if (ok && contents) {
+                            resolve(contents);
+                        } else {
+                            resolve(null);
+                        }
+                    } catch (e) {
+                        resolve(null);
+                    }
+                });
+            });
+
+            if (contents) {
                 let decoder = new TextDecoder('utf-8');
                 let contentStr = decoder.decode(contents);
                 for (let line of contentStr.split('\n')) {

@@ -56,7 +56,7 @@ export class AppImageManager {
                 cached.icon = iconPath;
                 let launcherExists = this._launcherService.launcherExists(cached.name);
                 if (launcherExists) {
-                    if (!this._launcherService.hasValidIcon(cached.name)) {
+                    if (!await this._launcherService.hasValidIcon(cached.name)) {
                         log(`Launcher for ${cached.name} has fallback icon. Recreating launcher with valid icon.`);
                         this._launcherService.createLauncher(cached);
                         await this._cacheManager.add(cached);

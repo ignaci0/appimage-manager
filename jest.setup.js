@@ -15,6 +15,10 @@ const mockFile = {
   set_attribute_uint32: jest.fn(),
   get_path: jest.fn(path => `/home/user/.local/share/applications`),
   load_contents: jest.fn(() => [false, null]),
+  load_contents_async: jest.fn((cancellable, callback) => {
+    if (callback) callback(mockFile, {});
+  }),
+  load_contents_finish: jest.fn(() => [false, null]),
   replace_contents_bytes_async: jest.fn((bytes, etag, make_backup, flags, cancellable, callback) => {
     if (callback) callback(mockFile, {});
   }),

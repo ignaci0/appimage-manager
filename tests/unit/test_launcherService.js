@@ -132,7 +132,7 @@ Icon=dev.eden_emu.eden
   });
 
   describe('hasValidIcon', () => {
-    it('should return false if desktop file does not exist', () => {
+    it('should return false if desktop file does not exist', async () => {
       const Gio = require('gi://Gio');
       const mockFile = {
         query_exists: jest.fn(() => false),
@@ -141,33 +141,39 @@ Icon=dev.eden_emu.eden
       };
       Gio.File.new_for_path.mockReturnValue(mockFile);
 
-      expect(launcherService.hasValidIcon('My Cool App')).toBe(false);
+      expect(await launcherService.hasValidIcon('My Cool App')).toBe(false);
     });
 
-    it('should return false if desktop file has fallback icon application-x-appimage', () => {
+    it('should return false if desktop file has fallback icon application-x-appimage', async () => {
       const Gio = require('gi://Gio');
       const encoder = new TextEncoder();
       const mockFile = {
         query_exists: jest.fn(() => true),
         get_path: jest.fn(() => '/home/user/.local/share/applications'),
-        load_contents: jest.fn(() => [true, encoder.encode('[Desktop Entry]\nIcon=application-x-appimage')]),
+        load_contents_async: jest.fn((cancellable, callback) => {
+          if (callback) callback(mockFile, {});
+        }),
+        load_contents_finish: jest.fn(() => [true, encoder.encode('[Desktop Entry]\nIcon=application-x-appimage')]),
       };
       Gio.File.new_for_path.mockReturnValue(mockFile);
 
-      expect(launcherService.hasValidIcon('My Cool App')).toBe(false);
+      expect(await launcherService.hasValidIcon('My Cool App')).toBe(false);
     });
 
-    it('should return true if desktop file has valid icon path', () => {
+    it('should return true if desktop file has valid icon path', async () => {
       const Gio = require('gi://Gio');
       const encoder = new TextEncoder();
       const mockFile = {
         query_exists: jest.fn(() => true),
         get_path: jest.fn(() => '/home/user/.local/share/applications'),
-        load_contents: jest.fn(() => [true, encoder.encode('[Desktop Entry]\nIcon=/home/user/.local/share/icons/hicolor/256x256/apps/My Cool App.png')]),
+        load_contents_async: jest.fn((cancellable, callback) => {
+          if (callback) callback(mockFile, {});
+        }),
+        load_contents_finish: jest.fn(() => [true, encoder.encode('[Desktop Entry]\nIcon=/home/user/.local/share/icons/hicolor/256x256/apps/My Cool App.png')]),
       };
       Gio.File.new_for_path.mockReturnValue(mockFile);
 
-      expect(launcherService.hasValidIcon('My Cool App')).toBe(true);
+      expect(await launcherService.hasValidIcon('My Cool App')).toBe(true);
     });
   });
 });
