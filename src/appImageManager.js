@@ -618,4 +618,8 @@ export class AppImageManager {
             }
         }
     }
+
+    getCachedDataSync() {
+        return this._cacheManager ? this._cacheManager.getCachedDataSync() : {};
+    }
 }

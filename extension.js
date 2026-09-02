@@ -46,23 +46,37 @@ export default class AppImageManagerExtension extends Extension {
         log(`Disabling ${this.metadata.name} extension`);
         this._fileMonitor?.stopMonitoring();
 
-        let monitoredDirectory = this._settingsManager.getMonitoredDirectory();
-        let dir = Gio.File.new_for_path(monitoredDirectory);
-        if (dir.query_exists(null)) {
+        if (this._appImageManager && this._launcherService) {
             try {
-                let enumerator = dir.enumerate_children('standard::name,standard::type', Gio.FileQueryInfoFlags.NONE, null);
-                let fileInfo;
-                while ((fileInfo = enumerator.next_file(null)) !== null) {
-                    let child = dir.get_child(fileInfo.get_name());
-                    if (fileInfo.get_file_type() === Gio.FileType.REGULAR && this._appImageManager.isAppImage(child.get_path())) {
-                        let fileName = GLib.path_get_basename(child.get_path());
-                        let appImageName = fileName.replace(/\.AppImage$/, '');
-                        this._launcherService.deleteLauncher(appImageName);
+                // First delete using exact names stored in cache metadata
+                let cache = this._appImageManager.getCachedDataSync();
+                for (let path in cache) {
+                    let entry = cache[path];
+                    if (entry && entry.name) {
+                        this._launcherService.deleteLauncher(entry.name);
                     }
                 }
-                enumerator.close(null);
+
+                // Fallback: iterate monitored directory and delete by filename-derived name
+                let monitoredDirectory = this._settingsManager?.getMonitoredDirectory();
+                if (monitoredDirectory) {
+                    let dir = Gio.File.new_for_path(monitoredDirectory);
+                    if (dir.query_exists(null)) {
+                        let enumerator = dir.enumerate_children('standard::name,standard::type', Gio.FileQueryInfoFlags.NONE, null);
+                        let fileInfo;
+                        while ((fileInfo = enumerator.next_file(null)) !== null) {
+                            let child = dir.get_child(fileInfo.get_name());
+                            if (fileInfo.get_file_type() === Gio.FileType.REGULAR && this._appImageManager.isAppImage(child.get_path())) {
+                                let fileName = GLib.path_get_basename(child.get_path());
+                                let appImageName = fileName.replace(/\.AppImage$/, '');
+                                this._launcherService.deleteLauncher(appImageName);
+                            }
+                        }
+                        enumerator.close(null);
+                    }
+                }
             } catch (e) {
-                logError(`Failed to cleanup launchers: ${e?.message ?? e}`);
+                logError(`Failed to cleanup launchers on disable: ${e?.message ?? e}`);
             }
         }
 
