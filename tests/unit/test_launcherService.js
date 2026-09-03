@@ -104,6 +104,64 @@ Icon=dev.eden_emu.eden
     expect(writtenContent).toContain('Exec="/home/user/Applications/Eden.AppImage" %f');
   });
 
+    it('should patch shipped desktop file with --appimage-extract-and-run when libfuse2 is absent', () => {
+    const Gio = require('gi://Gio');
+    const mockFile = Gio.File.new_for_path();
+    mockFile.replace_contents_bytes_async.mockClear();
+    jest.spyOn(launcherService, '_hasLibfuse2').mockReturnValue(false);
+
+    const originalDesktopContent = `[Desktop Entry]
+Name=AnythingLLM
+Exec=AppRun --no-sandbox %U
+Icon=anythingllm-desktop
+`;
+
+    const metadata = {
+      name: 'AnythingLLM',
+      path: '/home/user/Applications/AnythingLLM.AppImage',
+      icon: '/home/user/.local/share/icons/hicolor/256x256/apps/AnythingLLM.png',
+      desktopContent: originalDesktopContent,
+    };
+
+    launcherService.createLauncher(metadata);
+
+    expect(mockFile.replace_contents_bytes_async).toHaveBeenCalled();
+    const passedBytes = mockFile.replace_contents_bytes_async.mock.calls[0][0];
+    const decoder = new TextDecoder('utf-8');
+    const writtenContent = decoder.decode(passedBytes.array);
+
+    expect(writtenContent).toContain('Exec="/home/user/Applications/AnythingLLM.AppImage" --appimage-extract-and-run --no-sandbox %U');
+  });
+
+  it('should patch shipped desktop file without duplicate --appimage-extract-and-run when libfuse2 is present', () => {
+    const Gio = require('gi://Gio');
+    const mockFile = Gio.File.new_for_path();
+    mockFile.replace_contents_bytes_async.mockClear();
+    jest.spyOn(launcherService, '_hasLibfuse2').mockReturnValue(true);
+
+    const originalDesktopContent = `[Desktop Entry]
+Name=AnythingLLM
+Exec=AppRun --no-sandbox %U
+Icon=anythingllm-desktop
+`;
+
+    const metadata = {
+      name: 'AnythingLLM',
+      path: '/home/user/Applications/AnythingLLM.AppImage',
+      icon: '/home/user/.local/share/icons/hicolor/256x256/apps/AnythingLLM.png',
+      desktopContent: originalDesktopContent,
+    };
+
+    launcherService.createLauncher(metadata);
+
+    expect(mockFile.replace_contents_bytes_async).toHaveBeenCalled();
+    const passedBytes = mockFile.replace_contents_bytes_async.mock.calls[0][0];
+    const decoder = new TextDecoder('utf-8');
+    const writtenContent = decoder.decode(passedBytes.array);
+
+    expect(writtenContent).toContain('Exec="/home/user/Applications/AnythingLLM.AppImage" --no-sandbox %U');
+  });
+
   describe('launcherExists', () => {
     it('should return true if desktop file exists', () => {
       const Gio = require('gi://Gio');

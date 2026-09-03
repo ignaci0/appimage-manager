@@ -183,6 +183,7 @@ describe('AppImageManager', () => {
       const createLauncherMock = jest.spyOn(appImageManager._launcherService, 'createLauncher').mockImplementation(() => {});
       const launcherExistsMock = jest.spyOn(appImageManager._launcherService, 'launcherExists').mockReturnValue(true);
       const hasValidIconMock = jest.spyOn(appImageManager._launcherService, 'hasValidIcon').mockReturnValue(true);
+      jest.spyOn(appImageManager._launcherService, 'isLauncherUpToDate').mockReturnValue(true);
       const extractMetadataMock = jest.spyOn(appImageManager, 'extractMetadata');
       jest.spyOn(appImageManager, '_resolveIconPath').mockReturnValue('/path/to/icon.png');
 
